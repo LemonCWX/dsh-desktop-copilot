@@ -1,0 +1,30 @@
+{
+  "name": "@local/dsh-desktop-copilot",
+  "version": "1.2.0",
+  "private": true,
+  "description": "Desktop Copilot: one confirmed step at a time over the real Windows desktop.",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "index.js",
+    "schemas.js",
+    "cordis.patch.yml",
+    "helper/DesktopCopilot.exe",
+    "helper/uia-dump.ps1",
+    "helper/Helper.cs",
+    "helper/Uia.cs",
+    "helper/Input.cs",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ]
+}

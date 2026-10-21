@@ -1,0 +1,9 @@
+node_modules/
+dev/
+*.log
+dev-shot.*
+dev-target.log
+dc-*.png
+qq-*.png
+qq-chat.txt
+.tmp/

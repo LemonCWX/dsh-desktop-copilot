@@ -1,0 +1,4 @@
+- insert:
+    - id: desktop-copilot
+      name: '@local/dsh-desktop-copilot'
+      config: {}

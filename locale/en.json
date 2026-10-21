@@ -1,0 +1,11 @@
+{
+  "meta": {
+    "title": "Desktop Copilot",
+    "description": "Drives the real Windows desktop one confirmed step at a time: screenshot plus UI Automation targets, a 3-way card, and a stop hotkey."
+  },
+  "tools": {
+    "desktop_capture": "Capture the front window and its elements.",
+    "desktop_step": "Propose up to 3 actions and act on the user's choice.",
+    "desktop_control": "Status, stop, or the automatic switch."
+  }
+}

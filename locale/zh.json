@@ -1,0 +1,11 @@
+{
+  "meta": {
+    "title": "桌面副驾",
+    "description": "一步一步操控真实 Windows 桌面：截图加 UI 自动化目标、三选一卡片、随时可停的快捷键。"
+  },
+  "tools": {
+    "desktop_capture": "截取前台窗口及其控件树。",
+    "desktop_step": "提出至多 3 个动作，并按用户选择执行。",
+    "desktop_control": "状态、停止、自动开关。"
+  }
+}
