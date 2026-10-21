@@ -1,71 +1,141 @@
-# 桌面副驾 · v1.2.0
+# Desktop Copilot · 桌面副驾
+
+**A human-in-the-loop computer-use layer for the real Windows desktop.**
+Screenshot → the model proposes ≤3 actions → you confirm → it executes → it looks again.
+
+![version](https://img.shields.io/badge/version-1.2.0-blue)
+![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
+![license](https://img.shields.io/badge/license-MIT-green)
+
+Unlike a screenshot-every-second agent, every step is one deliberate turn: one snapshot, at most three
+actions, one visible result. That keeps the token cost low and keeps a human in the loop by default.
+
+---
+
+## What it does
+
+Ask in plain language, from any DSH conversation:
+
+- "Fill in this form for me"
+- "Send that PDF on my desktop to my file-transfer chat"
+- "Open the unread WeChat conversation and see what it says"
+
+The plugin exposes three tools:
+
+| Tool | Purpose |
+| --- | --- |
+| `desktop_capture` | Snapshot the front window or the whole screen, return the UI Automation tree (and OCR text when there is no tree) |
+| `desktop_step` | Run up to 3 actions (`click` / `type` / `key` / `scroll` / `drag` / `wait` / `open`), optionally behind a confirmation card |
+| `desktop_control` | `status`, `stop`, `focus`, `auto_on` / `auto_off`, `enable` / `disable` |
+
+A floating card, a global kill switch, and a page pill control all of it.
+
+---
+
+## Features
+
+- **Three-choice card** — `1 Do it myself` / `2 Next step` / `3 Reject` (with a reason, which re-plans on the same screen).
+- **Global hotkeys** — `Ctrl+Alt+1/2/3` choose without leaving the mouse; `Ctrl+Alt+Esc` stops everything.
+- **Execution modes** — Confirm (default) / Auto / Guide-only (draws the boxes, touches nothing).
+- **Capture scope** — front window (cheap) or full screen with every visible window tagged by title.
+- **OCR fallback** — WeChat 4.x, Electron shells and other self-drawn UIs expose no controls; the plugin
+  runs the Windows OCR engine and hands back text plus coordinates.
+- **Cheap polling** — `image: false` returns text only, for background "has anything changed?" loops.
+- **Danger guard** — delete / install / system settings / password fields / UAC always fall back to a human.
+- **Master switch** — pause the whole capability from the page pill; both tools refuse while paused.
+
+---
+
+## Install
+
+```bash
+dsh plugin --profile <profile> add link:<path-to-this-repo>
+```
+
+Requirements:
+
+- Windows 10/11 with .NET Framework 4.8
+- a DSH profile with the `web` UI
+- the native helper is deployed automatically to `%LOCALAPPDATA%\dsh-desktop-copilot\` on first use
+  (it must live outside the workspace: a process started inside the workspace cannot inject input or
+  read cross-process UI Automation)
+
+Refresh the page once after installing — the control pill is injected into the DSH index HTML.
+
+---
+
+## Usage
+
+| Control | Where | What |
+| --- | --- | --- |
+| Mode pill | bottom-left of the page | master switch, execution mode, capture scope |
+| Confirmation card | next to the target | three choices, auto-mode toggle |
+| `Ctrl+Alt+1 / 2 / 3` | global | do it myself / next step / reject |
+| `Ctrl+Alt+Esc` | global | stop: release input, hide overlays |
+
+---
+
+## Safety rules
+
+- No auto-Enter when the target conversation cannot be read from the window title.
+- ≤20 steps per task; retry a failed action once; stop when three steps in a row change nothing.
+- Destructive actions (delete, install, system settings, sign-in, payment) always require a human.
+- Passwords are never typed by the model.
+
+---
+
+## How it works
+
+```
+index.js             host half: the three tools, the step loop, mode routing, page-pill injection
+schemas.js           tool parameter / output schemas (plain JSON Schema)
+helper/Helper.cs     native helper: overlays, card form, hotkeys, capture, input, clipboard
+helper/Uia.cs        legacy in-process UIA (Chromium hides from it; superseded by uia-dump.ps1)
+helper/Input.cs      SendInput, clipboard paste, user-activity detection
+helper/uia-dump.ps1  PowerShell UIA snapshot (the only path that reads Chromium's MSAA bridge)
+helper/ocr-capture.ps1  Windows OCR of one PNG, returning text with bounding boxes
+dev/                 offline drivers and probes, not part of the package
+```
+
+The host talks to the helper over a local TCP socket (NDJSON), the helper runs as a separate
+`winexe` with a message-loop form for global hotkeys and click-through overlay windows.
+
+---
+
+## Known limits
+
+- **Self-drawn UIs** (WeChat, QQ, ChatGPT desktop) have no control tree: text comes from OCR, clicks go
+  to estimated coordinates. Emoji, images and message senders are not identified.
+- **Taskbar** windows have empty titles and are filtered out of the full-screen snapshot; read the
+  taskbar explicitly when you need it.
+- **Single monitor** coordinates only.
+- Scrolling is sent notch by notch, because several apps coalesce one large wheel delta.
+
+---
+
+## Roadmap
+
+- OCR boxes as first-class click targets (currently coordinates are estimated)
+- Taskbar in the full-screen snapshot
+- Multi-monitor coordinates
+- Drag with modifier keys and path avoidance
+
+---
+
+## 中文说明
 
 一步一步操作真实 Windows 桌面：截图 → 模型出 ≤3 个动作 → 卡片三选一 → 执行 → 复检。
-目标是把「简单但只能靠交互完成」的任务自动化，同时每一步都留人类确认的余地。
 
-## 怎么用
+- **执行模式**：确认（默认，每步弹卡）/ 自动（不弹卡，危险动作仍拦截）/ 只指路（只画框）
+- **快捷键**：`Ctrl+Alt+1` 自己执行、`Ctrl+Alt+2` 下一步、`Ctrl+Alt+3` 驳回、`Ctrl+Alt+Esc` 停止
+- **截图范围**：窗口 / 全屏（全屏会带上窗口归属，适合跨窗口任务）
+- **OCR 兜底**：窗口没有可读控件时，自动识别截图文字连同坐标交给模型
+- **总开关**：页面左下角胶囊可暂停，暂停后两个工具直接拒绝
 
-不需要入口按钮，直接说任务：
+v1.2 的实测修正：滚轮逐格发送、`pages` 一屏 24 格、纯文字截图 `image: false`、helper 按构建号部署。
 
-- 「帮我把这个表单填了」
-- 「把桌面那个 PDF 发给文件传输助手」
-- 「把微信里未读的聊天点开看看」
+---
 
-工具会自动：`desktop_capture`（截图 + 控件树）→ `desktop_step`（弹卡 / 自动执行）→ 再截图确认。
+## License
 
-## v1.2 新增
-
-- **纯文字截图**：`desktop_capture` 传 `image: false` 只回控件树和 OCR 文字，不附截图；后台轮询时省钱
-- **实测修正**：滚轮改为逐格发送（不少程序会合并单个大 delta），`pages` 一屏 = 24 格
-- **实测修正**：helper 部署改为带构建号的文件名，运行中的旧进程不会再锁住更新
-- **实测结论**：QQ、微信这类自绘界面只能靠 OCR 读字 + 坐标点击；任务栏窗口不在全屏快照里，需要单独 dump
-
-## v1.1 新增
-
-- **截图范围可切换**：窗口 / 全屏。全屏一次读所有可见窗口，元素带窗口归属，适合跨窗口任务
-- **OCR 兜底**：窗口没有可读控件（微信 4.x、Electron 壳）时，自动对截图做 Windows OCR，把识别出的文字连同坐标交给模型
-- **拖拽**：`kind: "drag"`，从起点按住拖到终点（`id`/`x,y` → `toId`/`toX,toY`）
-- **按屏滚动**：`pages` 参数以整屏为单位滚动，不受系统「每次滚几行」设置影响；`delta` 仍是格数
-- **总开关**：左下角胶囊可暂停/开启桌面操控；关闭时两个工具直接拒绝，系统提示同步变成「不要调用」
-- **卡片快捷键**：Ctrl+Alt+1 自己执行、Ctrl+Alt+2 下一步、Ctrl+Alt+3 驳回；Ctrl+Alt+Esc 停止
-
-## 执行模式（左下角「副驾 · 确认」胶囊）
-
-| 模式 | 行为 |
-|---|---|
-| 确认（默认） | 每步弹卡：`1 自己执行` / `2 下一步` / `3 驳回`（可写原因，同图重出，连续 2 次驳回停手） |
-| 自动 | 不弹卡直接执行；危险动作、密码框、UAC 强制切回人工 |
-| 只指路 | 只画编号框，不执行任何输入 |
-
-随时按 `Ctrl+Alt+Esc` 停止：释放输入、撤掉高亮、任务停在原地。
-
-## 支撑范围
-
-- **读控件**：Edge / Chrome 网页、Office、资源管理器、多数 Win32、部分 Electron
-- **OCR 兜底**：微信 4.x、ChatGPT 客户端等自绘界面，截图识别文字（能读字，但不认图片/表情，也分不清发言人）
-- **只发截图**：游戏、画布类工具（无控件树，按坐标点，可能偏）
-- **不走桌面**：文件整理 / 重命名 / 批量转换交给 shell
-
-## 硬规则
-
-- 读不到窗口标题时，不自动回车发送，先让用户确认目标对话
-- 每任务 ≤20 步；同一动作失败重试 1 次后停；连续 3 步界面无变化停手
-- 删除 / 安装 / 改系统设置 / 密码框 / UAC：一律人工确认
-
-## 结构
-
-```
-index.js           Host 半：三个工具、步骤循环、模式路由、页面胶囊注入
-schemas.js         工具参数与输出 schema（标准 JSON Schema，离线校验见 dev/check-schemas.mjs）
-helper/Helper.cs   原生 helper：覆盖层、卡片、快捷键、截图、注入、剪贴板
-helper/Uia.cs      遗留的进程内 UIA（Chromium 读不到，已让位于 uia-dump.ps1）
-helper/Input.cs    SendInput / 剪贴板 / 用户活动检测
-helper/uia-dump.ps1  PowerShell UIA 快照（Chromium 的 MSAA 桥只有它能读通）
-dev/               离线驱动与探针，不随包安装
-```
-
-## 安装事实
-
-- 插件以 `link:` 装进 profile `web`，源码在工作区。
-- helper 运行副本部署在 `%LOCALAPPDATA%\dsh-desktop-copilot\`（工作区内的进程受沙箱限制：不能注入输入、读不到跨进程控件、不能写 `%TEMP%`），每次启动按修改时间自动同步；已登记到 `~/.dsh/sandbox-copies.md`。
-- 页面胶囊由 host 注入索引 HTML（客户端模块表只在 DSH 启动时扫描，热装不生效）。
+MIT © 2026 cwx
