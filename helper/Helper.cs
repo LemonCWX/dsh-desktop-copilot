@@ -64,6 +64,7 @@ namespace DesktopCopilot
         internal const int HOTKEY_SELF = 0xA17D;
         internal const int HOTKEY_NEXT = 0xA17E;
         internal const int HOTKEY_REJECT = 0xA17F;
+        internal const int HOTKEY_INTERJECT = 0xA180;
 
         [DllImport("user32.dll")]
         internal static extern bool GetCursorPos(out POINT pt);
@@ -199,6 +200,66 @@ namespace DesktopCopilot
                 sf.LineAlignment = StringAlignment.Center;
                 e.Graphics.DrawString(label, font, text, new RectangleF(0, 0, Width, Height), sf);
             }
+        }
+    }
+
+    /// <summary>Small top-most field for typing a note to the agent without leaving the task.</summary>
+    internal sealed class InterjectForm : Form
+    {
+        internal event Action<string> Submitted;
+        private readonly TextBox box;
+
+        internal InterjectForm()
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.Manual;
+            ShowInTaskbar = false;
+            TopMost = true;
+            Width = 660;
+            Height = 96;
+            BackColor = Color.FromArgb(26, 27, 32);
+            Padding = new Padding(18, 12, 18, 14);
+            Rectangle screen = Screen.PrimaryScreen.WorkingArea;
+            Left = screen.Left + (screen.Width - Width) / 2;
+            Top = screen.Top + 56;
+
+            Label hint = new Label();
+            hint.Text = "\u63d2\u8bdd\u7ed9\u9cb8\u9c7c\u5a18\uff08Enter \u53d1\u9001 \u00b7 Esc \u53d6\u6d88\uff09";
+            hint.ForeColor = Color.FromArgb(150, 155, 165);
+            hint.Font = new Font("Microsoft YaHei UI", 8.5f);
+            hint.Dock = DockStyle.Top;
+            hint.Height = 20;
+
+            box = new TextBox();
+            box.BorderStyle = BorderStyle.FixedSingle;
+            box.BackColor = Color.FromArgb(38, 40, 48);
+            box.ForeColor = Color.White;
+            box.Font = new Font("Microsoft YaHei UI", 11f);
+            box.Dock = DockStyle.Bottom;
+            box.Height = 38;
+            box.KeyDown += delegate (object s, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Accept(); }
+                else if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; Hide(); }
+            };
+
+            Controls.Add(box);
+            Controls.Add(hint);
+        }
+
+        internal void Open()
+        {
+            box.Text = "";
+            Show();
+            Activate();
+            box.Focus();
+        }
+
+        private void Accept()
+        {
+            string text = (box.Text ?? "").Trim();
+            Hide();
+            if (text.Length > 0 && Submitted != null) Submitted(text);
         }
     }
 
@@ -1216,17 +1277,19 @@ namespace DesktopCopilot
                 f.ShowInTaskbar = false;
                 f.TopMost = true;
                 f.BackColor = Color.FromArgb(30, 30, 34);
-                f.Width = 320; f.Height = 34;
+                f.Width = 430; f.Height = 30;
+                f.Text = "DSH Copilot HUD";
                 Label label = new Label();
-                label.Text = "\u684c\u9762\u526f\u9a7e\u64cd\u63a7\u4e2d \u00b7 Ctrl+Alt+Esc \u505c\u6b62";
-                label.ForeColor = Color.White;
-                label.Font = new Font("Segoe UI", 9.5f);
+                label.Text = "\u9cb8\u9c7c\u5a18\u5728\u64cd\u63a7\u5c4f\u5e55 \u00b7 Ctrl+Alt+Esc \u505c\u6b62 \u00b7 Ctrl+Alt+I \u63d2\u8bdd";
+                label.ForeColor = Color.FromArgb(235, 237, 242);
+                label.Font = new Font("Microsoft YaHei UI", 9f);
                 label.Dock = DockStyle.Fill;
                 label.TextAlign = ContentAlignment.MiddleCenter;
                 f.Controls.Add(label);
+                f.Opacity = 0.92;
                 Rectangle screen = Screen.PrimaryScreen.Bounds;
                 f.Left = screen.Left + (screen.Width - f.Width) / 2;
-                f.Top = screen.Top + 12;
+                f.Top = screen.Top + 8;
                 indicator = f;
             }
             indicator.Show();
@@ -1289,6 +1352,29 @@ namespace DesktopCopilot
             if (card != null) card.TriggerChoice(choice);
         }
 
+        private InterjectForm interject;
+
+        internal void OnInterjectKey()
+        {
+            if (interject == null || interject.IsDisposed)
+            {
+                interject = new InterjectForm();
+                interject.Submitted += OnInterjectText;
+            }
+            interject.Open();
+        }
+
+        private void OnInterjectText(string text)
+        {
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            payload["text"] = text;
+            Dictionary<string, object> msg = new Dictionary<string, object>();
+            msg["id"] = "__interject";
+            msg["ok"] = true;
+            msg["result"] = payload;
+            Send(json.Serialize(msg));
+        }
+
         internal void OnHotkey()
         {
             Log("hotkey stop");
@@ -1325,6 +1411,11 @@ namespace DesktopCopilot
                 {
                     string choice = id == Native.HOTKEY_SELF ? "self" : (id == Native.HOTKEY_NEXT ? "next" : "reject");
                     if (Bridge != null) Bridge.OnChoiceKey(choice);
+                    return;
+                }
+                if (id == Native.HOTKEY_INTERJECT)
+                {
+                    if (Bridge != null) Bridge.OnInterjectKey();
                     return;
                 }
             }
@@ -1377,6 +1468,7 @@ namespace DesktopCopilot
             Native.RegisterHotKey(host.Handle, Native.HOTKEY_SELF, Native.MOD_CONTROL | Native.MOD_ALT, 0x31);
             Native.RegisterHotKey(host.Handle, Native.HOTKEY_NEXT, Native.MOD_CONTROL | Native.MOD_ALT, 0x32);
             Native.RegisterHotKey(host.Handle, Native.HOTKEY_REJECT, Native.MOD_CONTROL | Native.MOD_ALT, 0x33);
+            Native.RegisterHotKey(host.Handle, Native.HOTKEY_INTERJECT, Native.MOD_CONTROL | Native.MOD_ALT, 0x49);
             bridge.Log("hotkey registered: " + hotkey);
 
             Application.Run(host);

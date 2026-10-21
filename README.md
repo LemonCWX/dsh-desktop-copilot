@@ -140,6 +140,8 @@ The host talks to the helper over a local TCP socket (NDJSON), the helper runs a
 - **截图范围**：窗口 / 全屏（全屏会带上窗口归属，适合跨窗口任务）
 - **OCR 兜底**：窗口没有可读控件时，自动识别截图文字连同坐标交给模型
 - **总开关**：页面左下角胶囊可暂停，暂停后两个工具直接拒绝
+- **操控提示条**：执行期间屏幕顶部出现一条低调提示「鲸鱼娘在操控屏幕 · Ctrl+Alt+Esc 停止 · Ctrl+Alt+I 插话」，执行结束自动收起
+- **插话快捷键**：`Ctrl+Alt+I` 弹出小输入框，写完按 Enter；内容不打断当前动作，而是在下一步的工具结果里交给模型参考
 
 v1.2 的实测修正：滚轮逐格发送、`pages` 一屏 24 格、纯文字截图 `image: false`、helper 按构建号部署。
 

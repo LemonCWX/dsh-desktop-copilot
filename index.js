@@ -118,6 +118,12 @@ class HelperClient {
       let message
       try { message = JSON.parse(line) } catch { continue }
       if (message.type === 'event') continue
+      // Unsolicited: the user typed into the interject box. No request is waiting.
+      if (message.id === '__interject') {
+        const text = message.result && typeof message.result.text === 'string' ? message.result.text.trim() : ''
+        if (text && this.onInterject) this.onInterject(text)
+        continue
+      }
       const entry = this.pending.get(String(message.id))
       if (!entry) continue
       this.pending.delete(String(message.id))
@@ -340,6 +346,15 @@ export async function apply(ctx, config = {}) {
   let enabled = true
   /** Serializes helper calls: one card / one injection at a time. */
   let chain = Promise.resolve()
+  /** Notes the user typed into the interject box; delivered with the next tool result. */
+  let interjections = []
+  client.onInterject = (text) => { interjections.push(text) }
+  const takeInterjections = () => {
+    if (interjections.length === 0) return []
+    const notes = interjections.map(text => `【用户插话】${text}`)
+    interjections = []
+    return ['', ...notes, '（用户在你执行期间说的话，请在本步内考虑）']
+  }
 
   const serial = (fn) => {
     const run = chain.then(fn, fn)
@@ -524,7 +539,7 @@ export async function apply(ctx, config = {}) {
           : []
         const rows = result.elements.map(e => `#${e.id}${full && e.win ? ` [${e.win.slice(0, 24)}]` : ''} [${e.ct}] ${e.name || '（无名称）'} @${e.x},${e.y} ${e.w}x${e.h}${e.password ? ' [密码框]' : ''}${e.value ? ` value=${JSON.stringify(e.value)}` : ''}`)
         return {
-          summary: header.concat(rows).concat(ocrHeader).join('\n'),
+          summary: takeInterjections().concat(header).concat(rows).concat(ocrHeader).join('\n'),
           ...(result.image ? { image: result.image } : {}),
         }
       })
@@ -571,6 +586,7 @@ export async function apply(ctx, config = {}) {
           throw error
         })
         const summary = [
+          ...takeInterjections(),
           `choice=${result.choice}${result.reason ? ` reason=${result.reason}` : ''}`,
           ...(result.results ? result.results.map(r => `  ${r.kind}: ${r.ok ? 'ok' : 'failed'}${r.note ? ` (${r.note})` : ''}`) : []),
         ].join('\n')
