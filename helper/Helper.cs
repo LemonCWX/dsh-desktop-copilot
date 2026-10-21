@@ -25,6 +25,26 @@ namespace DesktopCopilot
         [DllImport("user32.dll")]
         internal static extern bool SetProcessDPIAware();
         [DllImport("user32.dll")]
+        internal static extern IntPtr GetDC(IntPtr hWnd);
+        [DllImport("user32.dll")]
+        internal static extern int ReleaseDC(IntPtr hWnd, IntPtr hdc);
+        [DllImport("gdi32.dll")]
+        internal static extern int GetDeviceCaps(IntPtr hdc, int index);
+
+        /// <summary>Desktop DPI divided by 96: 1.5 on a 150% display.</summary>
+        internal static float DpiScale()
+        {
+            try
+            {
+                IntPtr dc = GetDC(IntPtr.Zero);
+                if (dc == IntPtr.Zero) return 1f;
+                int dpi = GetDeviceCaps(dc, 88);
+                ReleaseDC(IntPtr.Zero, dc);
+                return dpi <= 0 ? 1f : dpi / 96f;
+            }
+            catch { return 1f; }
+        }
+        [DllImport("user32.dll")]
         internal static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
         [DllImport("user32.dll")]
         internal static extern bool UnregisterHotKey(IntPtr hWnd, int id);
@@ -210,6 +230,11 @@ namespace DesktopCopilot
         private readonly TextBox box;
         private readonly Label hint;
         private System.Windows.Forms.Timer focusTicker;
+        /** Desktop DPI / 96; this process is not DPI aware, so sizes are compensated by hand. */
+        private readonly float dpiK = Native.DpiScale();
+
+        private int S(int v) { return (int)Math.Round(v * dpiK); }
+        private Rectangle R(int x, int y, int w, int h) { return new Rectangle(S(x), S(y), S(w), S(h)); }
 
         internal InterjectForm()
         {
@@ -217,25 +242,24 @@ namespace DesktopCopilot
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
             TopMost = true;
-            AutoScaleMode = AutoScaleMode.None;
-            Width = 760;
-            Height = 132;
+            Width = S(760);
+            Height = S(132);
             Text = "DSH Copilot Interject";
             KeyPreview = true;
             BackColor = Color.FromArgb(22, 24, 29);
             DoubleBuffered = true;
             Rectangle screen = Screen.PrimaryScreen.WorkingArea;
             Left = screen.Left + (screen.Width - Width) / 2;
-            Top = screen.Top + 96;
+            Top = screen.Top + S(96);
 
             Label title = new Label();
             title.Text = "\u9cb8\u9c7c\u5a18\u5728\u542c \u00b7 Enter \u53d1\u9001 \u00b7 Esc \u53d6\u6d88";
             title.ForeColor = Color.FromArgb(155, 160, 172);
             title.Font = new Font("Microsoft YaHei UI", 9f);
-            title.Bounds = new Rectangle(20, 10, 520, 22);
+            title.Bounds = R(20, 10, 520, 22);
 
             Panel field = new Panel();
-            field.Bounds = new Rectangle(20, 38, 620, 54);
+            field.Bounds = R(20, 38, 620, 54);
             field.BackColor = Color.FromArgb(32, 35, 43);
             field.Padding = new Padding(12, 12, 12, 12);
 
@@ -244,7 +268,7 @@ namespace DesktopCopilot
             hint.ForeColor = Color.FromArgb(112, 118, 132);
             hint.Font = new Font("Microsoft YaHei UI", 11.5f);
             hint.AutoSize = false;
-            hint.Bounds = new Rectangle(12, 14, 560, 26);
+            hint.Bounds = R(12, 14, 560, 26);
             hint.BackColor = Color.Transparent;
             hint.Cursor = Cursors.IBeam;
             hint.Click += delegate { box.Focus(); };
@@ -254,7 +278,7 @@ namespace DesktopCopilot
             box.BackColor = Color.FromArgb(32, 35, 43);
             box.ForeColor = Color.White;
             box.Font = new Font("Microsoft YaHei UI", 12.5f);
-            box.Bounds = new Rectangle(12, 14, 596, 28);
+            box.Bounds = R(12, 14, 596, 28);
             box.KeyDown += delegate (object s, KeyEventArgs e)
             {
                 if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Accept(); }
@@ -274,7 +298,7 @@ namespace DesktopCopilot
 
             Button send = new Button();
             send.Text = "\u53d1\u9001";
-            send.Bounds = new Rectangle(652, 38, 88, 54);
+            send.Bounds = R(652, 38, 88, 54);
             send.FlatStyle = FlatStyle.Flat;
             send.FlatAppearance.BorderSize = 0;
             send.BackColor = Color.FromArgb(42, 88, 184);

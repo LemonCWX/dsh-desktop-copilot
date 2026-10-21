@@ -106,6 +106,12 @@ class HelperClient {
     this.socket = undefined
     for (const [, entry] of this.pending) { clearTimeout(entry.timer); entry.reject(new Error('desktop helper disconnected')) }
     this.pending.clear()
+    // The helper owns the global hotkeys, so a dead helper means the stop/interject keys
+    // silently stop working. Bring it back unless the plugin is unloading.
+    if (this.keepAlive && !this.stopping) {
+      clearTimeout(this.reviveTimer)
+      this.reviveTimer = setTimeout(() => { this.start().catch(() => { }) }, 1500)
+    }
   }
 
   onData(chunk) {
@@ -370,6 +376,17 @@ export async function apply(ctx, config = {}) {
   /** Notes the user typed into the interject box; delivered with the next tool result. */
   let interjections = []
   client.onInterject = (text) => { interjections.push(text) }
+  /** Deploy once, then keep the helper alive so its global hotkeys are always registered. */
+  const ensureHelper = async () => {
+    if (exePath === undefined) {
+      exePath = deployHelper().exe
+      client.exePath = exePath
+    }
+    client.keepAlive = true
+    await client.start()
+  }
+  void ensureHelper().catch((error) => { console.warn('[desktop-copilot] helper warm-up failed:', error?.message ?? String(error)) })
+  ctx.effect(() => () => { client.stopping = true; clearTimeout(client.reviveTimer); try { client.child?.kill() } catch { } }, 'desktop-copilot.helper')
   const takeInterjections = () => {
     if (interjections.length === 0) return []
     const notes = interjections.map(text => `【用户插话】${text}`)
