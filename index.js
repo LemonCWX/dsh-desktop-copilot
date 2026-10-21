@@ -34,7 +34,7 @@ function deployHelper() {
   try {
     mkdirSync(deployDir, { recursive: true })
     // Scripts are read on every call, so they can be replaced in place.
-    for (const name of ['uia-dump.ps1', 'ocr-capture.ps1']) {
+    for (const name of ['uia-dump.ps1', 'ocr-capture.ps1', 'uia-invoke.ps1']) {
       const source = join(packageRoot, 'helper', name)
       const target = join(deployDir, name)
       const current = existsSync(target) && existsSync(source)
@@ -368,6 +368,8 @@ export async function apply(ctx, config = {}) {
   /** Last captured element table, id -> element. */
   let elements = new Map()
   let steps = 0
+  /** Steps in a row that achieved nothing; two of them switch the next step to UIA. */
+  let consecutiveFailures = 0
   let lastWindow = undefined
   /** Master switch: when false, capture and step refuse to run at all. */
   let enabled = true
@@ -610,9 +612,15 @@ export async function apply(ctx, config = {}) {
         if (!client.socket) throw new Error('desktop helper is not running; call desktop_capture first')
         const actions = Array.isArray(args.actions) ? args.actions.slice(0, MAX_ACTIONS) : []
         if (actions.length === 0) throw new Error('desktop_step needs at least one action')
+        // UIA is a fallback only: after two steps in a row that achieved nothing, the next
+        // click/type on a named element is retried through InvokePattern / ValuePattern.
+        const useUia = consecutiveFailures >= 2
+        const effective = useUia
+          ? actions.map(action => (action.id && (action.kind === 'click' || action.kind === 'type') ? { ...action, via: 'uia' } : action))
+          : actions
         steps += 1
         if (steps > MAX_STEPS) throw new Error(`这个任务已经走了 ${MAX_STEPS} 步，停手。请让用户重新描述目标。`)
-        const dangerous = isDangerous(actions, elements)
+        const dangerous = isDangerous(effective, elements)
         // The page's mode selector wins unless this call overrides it; a dangerous
         // action always drops back to a card.
         const selected = args.mode === 'auto' ? 'auto' : (args.mode === 'manual' ? 'confirm' : mode)
@@ -622,7 +630,7 @@ export async function apply(ctx, config = {}) {
         if (args.reason) lines.unshift(`为什么：${args.reason}`)
         // The window can scroll between the capture and the card, so re-read the tree and
         // move every id onto its current rectangle before showing anything.
-        const resolved = await resolveTargets(actions)
+        const resolved = await resolveTargets(effective)
         const result = await client.request('step', {
           title: `${lastWindow?.title ?? ''} — ${args.title}`,
           lines,
@@ -635,10 +643,18 @@ export async function apply(ctx, config = {}) {
           await client.request('hide', {}, 5000).catch(() => { });
           throw error
         })
+        const failed = (result.results ?? []).filter(r => r && r.ok === false).length
+        const attempted = (result.results ?? []).length
+        if (attempted > 0) {
+          if (failed === attempted) consecutiveFailures += 1
+          else consecutiveFailures = 0
+        }
         const summary = [
           ...takeInterjections(),
           `choice=${result.choice}${result.reason ? ` reason=${result.reason}` : ''}`,
           ...(result.results ? result.results.map(r => `  ${r.kind}: ${r.ok ? 'ok' : 'failed'}${r.note ? ` (${r.note})` : ''}`) : []),
+          ...(useUia ? ['（本步用了 UIA 兜底：上两步都没生效，改用控件 Invoke/SetValue 再试一次）'] : []),
+          ...(consecutiveFailures >= 2 && !useUia ? ['（连续两步没生效，下一步会自动尝试 UIA 兜底）'] : []),
         ].join('\n')
         return {
           summary,

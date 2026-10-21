@@ -44,6 +44,20 @@ namespace DesktopCopilot
             }
             catch { return 1f; }
         }
+
+        /// <summary>Real horizontal pixels: Screen.Bounds reports a virtualized size in this process.</summary>
+        internal static int ScreenWidth()
+        {
+            try
+            {
+                IntPtr dc = GetDC(IntPtr.Zero);
+                if (dc == IntPtr.Zero) return Screen.PrimaryScreen.Bounds.Width;
+                int w = GetDeviceCaps(dc, 8);
+                ReleaseDC(IntPtr.Zero, dc);
+                return w > 0 ? w : Screen.PrimaryScreen.Bounds.Width;
+            }
+            catch { return Screen.PrimaryScreen.Bounds.Width; }
+        }
         [DllImport("user32.dll")]
         internal static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
         [DllImport("user32.dll")]
@@ -249,7 +263,7 @@ namespace DesktopCopilot
             BackColor = Color.FromArgb(22, 24, 29);
             DoubleBuffered = true;
             Rectangle screen = Screen.PrimaryScreen.WorkingArea;
-            Left = screen.Left + (screen.Width - Width) / 2;
+            Left = Math.Max(0, (int)((Native.ScreenWidth() * dpiK - Width) / 2));
             Top = screen.Top + S(96);
 
             Label title = new Label();
@@ -310,6 +324,7 @@ namespace DesktopCopilot
             Controls.Add(field);
             Controls.Add(send);
             hint.Visible = true;
+            Shown += delegate { Paint2.Round(this, S(12)); };
             KeyDown += delegate (object s, KeyEventArgs e)
             {
                 if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Accept(); }
@@ -1083,6 +1098,53 @@ namespace DesktopCopilot
         }
 
         /// <summary>OCR one screen rectangle with the Windows recognizer. Returns null when unavailable.</summary>
+        /// <summary>
+        /// Act through UI Automation instead of real input. Only a fallback: many apps (games,
+        /// Electron shells, WeChat) expose no Invoke/Value pattern at all.
+        /// </summary>
+        private Dictionary<string, object> RunUiaInvoke(IntPtr hwnd, Dictionary<string, object> element, string mode, string value)
+        {
+            string directory = Path.GetDirectoryName(Application.ExecutablePath);
+            string script = Path.Combine(directory, "uia-invoke.ps1");
+            if (!File.Exists(script) || hwnd == IntPtr.Zero) return null;
+            string name = element != null && element.ContainsKey("name") ? Convert.ToString(element["name"], CultureInfo.InvariantCulture) : "";
+            string ct = element != null && element.ContainsKey("ct") ? Convert.ToString(element["ct"], CultureInfo.InvariantCulture) : "";
+            // Chinese names must not travel through the command line, so hand over a UTF-8 file.
+            string spec = Path.Combine(Path.GetTempPath(), "dsh-dc-uia-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                File.WriteAllText(spec, json.Serialize(new Dictionary<string, object>
+                {
+                    { "name", name ?? "" }, { "ct", ct ?? "" }, { "mode", mode }, { "value", value ?? "" },
+                }), new UTF8Encoding(false));
+                string args = "-NoProfile -ExecutionPolicy Bypass -NonInteractive -File \"" + script + "\" -Hwnd " + hwnd.ToInt64()
+                    + " -Spec \"" + spec + "\"";
+                System.Diagnostics.ProcessStartInfo info = new System.Diagnostics.ProcessStartInfo("powershell.exe", args);
+                info.UseShellExecute = false;
+                info.CreateNoWindow = true;
+                info.RedirectStandardOutput = true;
+                info.RedirectStandardError = true;
+                info.StandardOutputEncoding = Encoding.UTF8;
+                using (System.Diagnostics.Process process = System.Diagnostics.Process.Start(info))
+                {
+                    string stdout = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit(30000);
+                    string jsonLine = null;
+                    foreach (string line in stdout.Split('\n'))
+                    {
+                        string trimmed = line.Trim();
+                        if (trimmed.StartsWith("{")) jsonLine = trimmed;
+                    }
+                    if (jsonLine == null) return null;
+                    return Dict(json.DeserializeObject(jsonLine));
+                }
+            }
+            finally
+            {
+                try { File.Delete(spec); } catch { }
+            }
+        }
+
         private Dictionary<string, object> RunOcr(Rectangle bounds)
         {
             string directory = Path.GetDirectoryName(Application.ExecutablePath);
@@ -1197,29 +1259,49 @@ namespace DesktopCopilot
                     {
                         if (kind == "click")
                         {
-                            Input.Click(x, y, IntOf(a, "button", 0) == 1, IntOf(a, "count", 1));
-                            step["ok"] = true;
-                            step["note"] = element != null ? "element " + IntOf(a, "id", 0) : "coords";
+                            bool viaUia = Convert.ToString(a.ContainsKey("via") ? a["via"] : "", CultureInfo.InvariantCulture) == "uia";
+                            if (viaUia && element != null)
+                            {
+                                Dictionary<string, object> uia = RunUiaInvoke(lastWindowHandle, element, "invoke", "");
+                                step["ok"] = uia != null && Convert.ToBoolean(uia["ok"], CultureInfo.InvariantCulture);
+                                step["note"] = "uia " + (uia != null && uia.ContainsKey("note") ? Convert.ToString(uia["note"], CultureInfo.InvariantCulture) : "unavailable");
+                            }
+                            else
+                            {
+                                Input.Click(x, y, IntOf(a, "button", 0) == 1, IntOf(a, "count", 1));
+                                step["ok"] = true;
+                                step["note"] = element != null ? "element " + IntOf(a, "id", 0) : "coords";
+                            }
                         }
                         else if (kind == "type")
                         {
                             string text = Convert.ToString(a["text"], CultureInfo.InvariantCulture);
-                            if (element != null)
+                            bool viaUia = Convert.ToString(a.ContainsKey("via") ? a["via"] : "", CultureInfo.InvariantCulture) == "uia";
+                            if (viaUia && element != null)
                             {
-                                Input.Click(x, y, false, 1);
-                                System.Threading.Thread.Sleep(140);
-                            }
-                            bool focused = lastWindowHandle == IntPtr.Zero || Native.GetForegroundWindow() == lastWindowHandle;
-                            if (!focused)
-                            {
-                                step["ok"] = false;
-                                step["note"] = "refused: target window is not focused";
+                                Dictionary<string, object> uia = RunUiaInvoke(lastWindowHandle, element, "setvalue", text);
+                                step["ok"] = uia != null && Convert.ToBoolean(uia["ok"], CultureInfo.InvariantCulture);
+                                step["note"] = "uia " + (uia != null && uia.ContainsKey("note") ? Convert.ToString(uia["note"], CultureInfo.InvariantCulture) : "unavailable");
                             }
                             else
                             {
-                                Input.TypeText(text);
-                                step["ok"] = true;
-                                step["note"] = "keyboard";
+                                if (element != null)
+                                {
+                                    Input.Click(x, y, false, 1);
+                                    System.Threading.Thread.Sleep(140);
+                                }
+                                bool focused = lastWindowHandle == IntPtr.Zero || Native.GetForegroundWindow() == lastWindowHandle;
+                                if (!focused)
+                                {
+                                    step["ok"] = false;
+                                    step["note"] = "refused: target window is not focused";
+                                }
+                                else
+                                {
+                                    Input.TypeText(text);
+                                    step["ok"] = true;
+                                    step["note"] = "keyboard";
+                                }
                             }
                         }
                         else if (kind == "key")
@@ -1406,7 +1488,9 @@ namespace DesktopCopilot
                 f.ShowInTaskbar = false;
                 f.TopMost = true;
                 f.BackColor = Color.FromArgb(30, 30, 34);
-                f.Width = 430; f.Height = 30;
+                // Same DPI compensation as the interject box: without it the bar shrinks to 2/3.
+                float k = Native.DpiScale();
+                f.Width = (int)Math.Round(430 * k); f.Height = (int)Math.Round(30 * k);
                 f.Text = "DSH Copilot HUD";
                 Label label = new Label();
                 label.Text = "\u9cb8\u9c7c\u5a18\u5728\u64cd\u63a7\u5c4f\u5e55 \u00b7 Ctrl+Alt+Esc \u505c\u6b62 \u00b7 Ctrl+Alt+I \u63d2\u8bdd";
@@ -1418,8 +1502,9 @@ namespace DesktopCopilot
                 indicatorLabel = label;
                 f.Opacity = 0.92;
                 Rectangle screen = Screen.PrimaryScreen.Bounds;
-                f.Left = screen.Left + (screen.Width - f.Width) / 2;
+                f.Left = Math.Max(0, (int)((Native.ScreenWidth() * k - f.Width) / 2));
                 f.Top = screen.Top + 8;
+                Paint2.Round(f, (int)Math.Round(8 * k));
                 indicator = f;
             }
             indicator.Show();
@@ -1578,6 +1663,36 @@ namespace DesktopCopilot
                 }
             }
             base.WndProc(ref m);
+        }
+    }
+
+    /// <summary>Rounded-corner helpers shared by the small overlays.</summary>
+    internal static class Paint2
+    {
+        internal static GraphicsPath Rounded(Rectangle r, int radius)
+        {
+            GraphicsPath path = new GraphicsPath();
+            int d = Math.Max(1, radius) * 2;
+            if (d > r.Width) d = r.Width;
+            if (d > r.Height) d = r.Height;
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        internal static void Round(Form form, int radius)
+        {
+            try
+            {
+                Rectangle r = form.ClientRectangle;
+                r.Width -= 1;
+                r.Height -= 1;
+                form.Region = new Region(Rounded(r, radius));
+            }
+            catch { }
         }
     }
 
