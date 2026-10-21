@@ -5,7 +5,7 @@
 **A human-in-the-loop computer-use layer for the real Windows desktop.**
 Screenshot → the model proposes ≤3 actions → you confirm → it executes → it looks again.
 
-![version](https://img.shields.io/badge/version-1.2.0-blue)
+![version](https://img.shields.io/badge/version-1.2.1-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![made by](https://img.shields.io/badge/packaged%20%26%20pushed-by%20an%20AI%20agent-8A2BE2)
