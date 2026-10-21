@@ -600,6 +600,8 @@ namespace DesktopCopilot
         private bool pendingGuide;
         private object[] pendingActions;
         private Form indicator;
+        private Label indicatorLabel;
+        private const string IndicatorText = "\u9cb8\u9c7c\u5a18\u5728\u64cd\u63a7\u5c4f\u5e55 \u00b7 Ctrl+Alt+Esc \u505c\u6b62 \u00b7 Ctrl+Alt+I \u63d2\u8bdd";
         private static readonly string[] DangerWords = new string[]
         {
             "\u5220\u9664", "\u79fb\u81f3\u56de\u6536\u7ad9", "\u6e05\u7a7a", "\u683c\u5f0f\u5316", "\u5378\u8f7d", "\u5b89\u88c5",
@@ -1363,6 +1365,7 @@ namespace DesktopCopilot
                 label.Dock = DockStyle.Fill;
                 label.TextAlign = ContentAlignment.MiddleCenter;
                 f.Controls.Add(label);
+                indicatorLabel = label;
                 f.Opacity = 0.92;
                 Rectangle screen = Screen.PrimaryScreen.Bounds;
                 f.Left = screen.Left + (screen.Width - f.Width) / 2;
@@ -1383,6 +1386,26 @@ namespace DesktopCopilot
         private void HideIndicatorForced()
         {
             if (indicator != null) indicator.Hide();
+        }
+
+        /// <summary>Show one short line in the control bar, then fall back to the normal hint.</summary>
+        private void FlashIndicator(string text)
+        {
+            ShowIndicator();
+            if (indicatorLabel == null) return;
+            indicatorLabel.Text = text;
+            System.Threading.Tasks.Task.Delay(2400).ContinueWith(delegate
+            {
+                try
+                {
+                    host.BeginInvoke(new Action(delegate
+                    {
+                        if (indicatorLabel != null) indicatorLabel.Text = IndicatorText;
+                        HideIndicator();
+                    }));
+                }
+                catch { }
+            });
         }
 
         private bool IsDangerous(object[] actions)
@@ -1457,6 +1480,7 @@ namespace DesktopCopilot
             msg["ok"] = true;
             msg["result"] = payload;
             Send(json.Serialize(msg));
+            FlashIndicator("\u5df2\u63d2\u8bdd\uff1a" + (text.Length > 24 ? text.Substring(0, 24) + "\u2026" : text));
         }
 
         internal void OnHotkey()
