@@ -208,6 +208,7 @@ namespace DesktopCopilot
     {
         internal event Action<string> Submitted;
         private readonly TextBox box;
+        private readonly Label hint;
         private System.Windows.Forms.Timer focusTicker;
 
         internal InterjectForm()
@@ -216,72 +217,102 @@ namespace DesktopCopilot
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
             TopMost = true;
-            Width = 660;
-            Height = 100;
+            AutoScaleMode = AutoScaleMode.None;
+            Width = 760;
+            Height = 132;
             Text = "DSH Copilot Interject";
             KeyPreview = true;
-            BackColor = Color.FromArgb(26, 27, 32);
-            Padding = new Padding(18, 12, 18, 14);
+            BackColor = Color.FromArgb(22, 24, 29);
+            DoubleBuffered = true;
             Rectangle screen = Screen.PrimaryScreen.WorkingArea;
             Left = screen.Left + (screen.Width - Width) / 2;
-            Top = screen.Top + 56;
+            Top = screen.Top + 96;
 
-            Button send = new Button();
-            send.Text = "\u53d1\u9001";
-            send.Dock = DockStyle.Right;
-            send.Width = 70;
-            send.FlatStyle = FlatStyle.Flat;
-            send.BackColor = Color.FromArgb(52, 96, 178);
-            send.ForeColor = Color.White;
-            send.Font = new Font("Microsoft YaHei UI", 9.5f);
-            send.Click += delegate { Accept(); };
+            Label title = new Label();
+            title.Text = "\u9cb8\u9c7c\u5a18\u5728\u542c \u00b7 Enter \u53d1\u9001 \u00b7 Esc \u53d6\u6d88";
+            title.ForeColor = Color.FromArgb(155, 160, 172);
+            title.Font = new Font("Microsoft YaHei UI", 9f);
+            title.Bounds = new Rectangle(20, 10, 520, 22);
 
-            Label hint = new Label();
-            hint.Text = "\u63d2\u8bdd\u7ed9\u9cb8\u9c7c\u5a18\uff08Enter \u53d1\u9001 \u00b7 Esc \u53d6\u6d88\uff09";
-            hint.ForeColor = Color.FromArgb(150, 155, 165);
-            hint.Font = new Font("Microsoft YaHei UI", 8.5f);
-            hint.Dock = DockStyle.Top;
-            hint.Height = 20;
+            Panel field = new Panel();
+            field.Bounds = new Rectangle(20, 38, 620, 54);
+            field.BackColor = Color.FromArgb(32, 35, 43);
+            field.Padding = new Padding(12, 12, 12, 12);
+
+            hint = new Label();
+            hint.Text = "\u60f3\u8bf4\u4ec0\u4e48\u76f4\u63a5\u6253\uff0c\u4e0d\u4f1a\u6253\u65ad\u5f53\u524d\u52a8\u4f5c";
+            hint.ForeColor = Color.FromArgb(112, 118, 132);
+            hint.Font = new Font("Microsoft YaHei UI", 11.5f);
+            hint.AutoSize = false;
+            hint.Bounds = new Rectangle(12, 14, 560, 26);
+            hint.BackColor = Color.Transparent;
+            hint.Cursor = Cursors.IBeam;
+            hint.Click += delegate { box.Focus(); };
 
             box = new TextBox();
-            box.BorderStyle = BorderStyle.FixedSingle;
-            box.BackColor = Color.FromArgb(38, 40, 48);
+            box.BorderStyle = BorderStyle.None;
+            box.BackColor = Color.FromArgb(32, 35, 43);
             box.ForeColor = Color.White;
-            box.Font = new Font("Microsoft YaHei UI", 11f);
-            box.Dock = DockStyle.Bottom;
-            box.Height = 38;
+            box.Font = new Font("Microsoft YaHei UI", 12.5f);
+            box.Bounds = new Rectangle(12, 14, 596, 28);
             box.KeyDown += delegate (object s, KeyEventArgs e)
             {
                 if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Accept(); }
                 else if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; Hide(); }
             };
+            box.TextChanged += delegate { if (hint != null) hint.Visible = box.Text.Length == 0; };
+            box.Enter += delegate { field.Invalidate(); };
+            box.Leave += delegate { field.Invalidate(); };
 
-            Controls.Add(box);
-            Controls.Add(hint);
+            field.Controls.Add(hint);
+            field.Controls.Add(box);
+            field.Paint += delegate (object s, PaintEventArgs e)
+            {
+                Color line = box.Focused ? Color.FromArgb(96, 148, 240) : Color.FromArgb(66, 72, 88);
+                using (Pen p = new Pen(line, 2)) e.Graphics.DrawRectangle(p, 0, 0, field.Width - 1, field.Height - 1);
+            };
+
+            Button send = new Button();
+            send.Text = "\u53d1\u9001";
+            send.Bounds = new Rectangle(652, 38, 88, 54);
+            send.FlatStyle = FlatStyle.Flat;
+            send.FlatAppearance.BorderSize = 0;
+            send.BackColor = Color.FromArgb(42, 88, 184);
+            send.ForeColor = Color.White;
+            send.Font = new Font("Microsoft YaHei UI", 11f);
+            send.Click += delegate { Accept(); };
+
+            Controls.Add(title);
+            Controls.Add(field);
             Controls.Add(send);
-            // The keyboard may land on the form rather than the text box, so handle the keys
-            // here too: Enter and Esc must always work once the box is open.
+            hint.Visible = true;
             KeyDown += delegate (object s, KeyEventArgs e)
             {
                 if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Accept(); }
                 else if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; Hide(); }
             };
-            Shown += delegate
-            {
-                ActiveControl = box;
-                box.Focus();
-                box.SelectAll();
-            };
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            using (Pen p = new Pen(Color.FromArgb(54, 60, 74), 1))
+                e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
         }
 
         internal void Open()
         {
             box.Text = "";
-            Show();
             TopMost = true;
-            ForceFocus();
-            // Windows hands the foreground back to whoever asked last, so keep re-asserting
-            // focus for a moment: the user is likely already typing.
+            Show();
+            // WM_HOTKEY gives this process the right to take the foreground, so ask directly
+            // first; the Alt trick is only the fallback for when another app still wins.
+            IntPtr handle = Handle;
+            try { Native.SetForegroundWindow(handle); } catch { }
+            Activate();
+            ActiveControl = box;
+            box.Focus();
+            if (!ContainsFocus) ForceFocus(true);
             if (focusTicker != null) { focusTicker.Stop(); focusTicker.Dispose(); }
             int attempts = 0;
             focusTicker = new System.Windows.Forms.Timer();
@@ -289,46 +320,41 @@ namespace DesktopCopilot
             focusTicker.Tick += delegate
             {
                 attempts++;
-                if (!Visible || attempts > 12) { focusTicker.Stop(); return; }
-                if (!ContainsFocus) ForceFocus();
+                if (!Visible || attempts > 14) { focusTicker.Stop(); return; }
+                if (!ContainsFocus) ForceFocus(attempts < 4);
             };
             focusTicker.Start();
         }
 
-        private void ForceFocus()
+        private void ForceFocus(bool graceful)
         {
             try
             {
-                Input.PressKeys("alt");
-                System.Threading.Thread.Sleep(40);
-                IntPtr fg = Native.GetForegroundWindow();
-                uint pidUnused;
-                uint fgThread = Native.GetWindowThreadProcessId(fg, out pidUnused);
-                uint myThread = Native.GetCurrentThreadId();
-                bool attached = Native.AttachThreadInput(myThread, fgThread, true);
-                try
+                if (graceful) Native.SetForegroundWindow(Handle);
+                else
                 {
-                    Native.BringWindowToTop(Handle);
-                    Native.SetForegroundWindow(Handle);
-                }
-                finally
-                {
-                    if (attached) Native.AttachThreadInput(myThread, fgThread, false);
+                    Input.PressKeys("alt");
+                    System.Threading.Thread.Sleep(40);
+                    IntPtr fg = Native.GetForegroundWindow();
+                    uint pidUnused;
+                    uint fgThread = Native.GetWindowThreadProcessId(fg, out pidUnused);
+                    uint myThread = Native.GetCurrentThreadId();
+                    bool attached = Native.AttachThreadInput(myThread, fgThread, true);
+                    try
+                    {
+                        Native.BringWindowToTop(Handle);
+                        Native.SetForegroundWindow(Handle);
+                    }
+                    finally
+                    {
+                        if (attached) Native.AttachThreadInput(myThread, fgThread, false);
+                    }
                 }
             }
             catch { }
             Activate();
             ActiveControl = box;
-            box.Select();
-            try { BeginInvoke(new Action(delegate { ActiveControl = box; box.Focus(); })); } catch { }
-            // A synthetic click on our own field is a real user-level input event, so Windows
-            // lets it take the keyboard: that is what makes typing work without a manual click.
-            try
-            {
-                Point p = box.PointToScreen(new Point(Math.Max(8, box.Width / 2), Math.Max(8, box.Height / 2)));
-                Input.Click(p.X, p.Y, false, 1);
-            }
-            catch { }
+            box.Focus();
         }
 
         private void Accept()
