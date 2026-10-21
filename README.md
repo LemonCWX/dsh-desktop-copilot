@@ -1,5 +1,7 @@
 # Desktop Copilot · 桌面副驾
 
+**English** | [简体中文](README.zh-CN.md)
+
 **A human-in-the-loop computer-use layer for the real Windows desktop.**
 Screenshot → the model proposes ≤3 actions → you confirm → it executes → it looks again.
 
