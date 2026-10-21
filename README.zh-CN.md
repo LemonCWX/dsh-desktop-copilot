@@ -5,7 +5,7 @@
 **面向真实 Windows 桌面的人机协同 computer-use 层。**
 截图 → 模型出 ≤3 个动作 → 你确认 → 它执行 → 再看一眼。
 
-![version](https://img.shields.io/badge/version-1.2.1-blue)
+![version](https://img.shields.io/badge/version-1.2.2-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![made by](https://img.shields.io/badge/packaged%20%26%20pushed-by%20an%20AI%20agent-8A2BE2)
