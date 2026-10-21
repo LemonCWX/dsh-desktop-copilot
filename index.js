@@ -219,7 +219,12 @@ const CHIP_SCRIPT = `<script>(function(){
     '<div style="margin:4px 0"><b style="color:#8fd18f">可读控件</b>　Edge/Chrome 网页、微信、Office、资源管理器</div>',
     '<div style="margin:4px 0"><b style="color:#e0b060">只发截图</b>　ChatGPT 客户端、游戏、画布类工具：按坐标点，可能偏</div>',
     '<div style="margin:4px 0"><b style="color:#9aa3b2">文件任务</b>　整理/重命名/批量操作走 shell，不进桌面循环</div>',
-    '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #2e3442;color:#9aa3b2">操控中随时按 Ctrl+Alt+Esc 停止。</div>'
+    '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #2e3442;color:#9aa3b2">操控中随时按 Ctrl+Alt+Esc 停止。</div>',
+    '<div style="margin-top:8px;display:flex;gap:6px">',
+    '<input id="dsh-dc-interject" placeholder="插话给鲸鱼娘…" style="flex:1;min-width:0;background:#1b1f27;border:1px solid #2e3442;border-radius:8px;color:#e7e9ef;padding:6px 8px;font:inherit;font-size:12px;outline:none" />',
+    '<button id="dsh-dc-send" type="button" style="cursor:pointer;font:inherit;font-size:12px;border-radius:8px;padding:6px 10px;border:1px solid #3b6fd4;background:#2a58b8;color:#fff">插话</button>',
+    '</div>',
+    '<div id="dsh-dc-senthint" style="color:#8fd18f;font-size:11px;height:14px;margin-top:4px"></div>'
   ].join('');
   var MODES = [['confirm', '确认'], ['auto', '自动'], ['guide', '只指路']];
   var LABEL = { confirm: '确认', auto: '自动', guide: '只指路' };
@@ -251,6 +256,22 @@ const CHIP_SCRIPT = `<script>(function(){
   function push() {
     fetch('/desktop-copilot/mode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: current, capture: capture, enabled: powered }) }).catch(function () { });
   }
+  var interjectBox = panel.querySelector('#dsh-dc-interject');
+  var interjectHint = panel.querySelector('#dsh-dc-senthint');
+  function sendInterject() {
+    var text = (interjectBox.value || '').trim();
+    if (!text) return;
+    interjectBox.value = '';
+    fetch('/desktop-copilot/interject', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { interjectHint.textContent = d && d.queued ? '已插话，下一步会带到' : '没发出去'; })
+      .catch(function () { interjectHint.textContent = '发送失败'; });
+  }
+  panel.querySelector('#dsh-dc-send').onclick = sendInterject;
+  interjectBox.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); sendInterject(); }
+    e.stopPropagation();
+  });
   function paint() {
     powerBar.innerHTML = '';
     POWERS.forEach(function (pair) {
@@ -402,6 +423,18 @@ export async function apply(ctx, config = {}) {
         respond(res, { mode, capture: captureScope, enabled })
       }),
     }), 'desktop-copilot.mode')
+
+    // The page-side interject box lives here: a browser input keeps the keyboard focus that
+    // the native helper cannot hold, and the text reaches the agent with the next tool result.
+    ctx.effect(() => web.register({
+      kind: 'exact',
+      path: '/desktop-copilot/interject',
+      handler: (req, res) => readJson(req, (next) => {
+        const text = typeof next.text === 'string' ? next.text.trim().slice(0, 500) : ''
+        if (text) interjections.push(text)
+        respond(res, { queued: Boolean(text), pending: interjections.length })
+      }),
+    }), 'desktop-copilot.interject')
   }
 
   // The page-side note. The client-module graph is composed when the Host boots, so a

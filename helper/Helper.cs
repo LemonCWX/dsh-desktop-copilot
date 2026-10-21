@@ -208,6 +208,7 @@ namespace DesktopCopilot
     {
         internal event Action<string> Submitted;
         private readonly TextBox box;
+        private System.Windows.Forms.Timer focusTicker;
 
         internal InterjectForm()
         {
@@ -216,12 +217,24 @@ namespace DesktopCopilot
             ShowInTaskbar = false;
             TopMost = true;
             Width = 660;
-            Height = 96;
+            Height = 100;
+            Text = "DSH Copilot Interject";
+            KeyPreview = true;
             BackColor = Color.FromArgb(26, 27, 32);
             Padding = new Padding(18, 12, 18, 14);
             Rectangle screen = Screen.PrimaryScreen.WorkingArea;
             Left = screen.Left + (screen.Width - Width) / 2;
             Top = screen.Top + 56;
+
+            Button send = new Button();
+            send.Text = "\u53d1\u9001";
+            send.Dock = DockStyle.Right;
+            send.Width = 70;
+            send.FlatStyle = FlatStyle.Flat;
+            send.BackColor = Color.FromArgb(52, 96, 178);
+            send.ForeColor = Color.White;
+            send.Font = new Font("Microsoft YaHei UI", 9.5f);
+            send.Click += delegate { Accept(); };
 
             Label hint = new Label();
             hint.Text = "\u63d2\u8bdd\u7ed9\u9cb8\u9c7c\u5a18\uff08Enter \u53d1\u9001 \u00b7 Esc \u53d6\u6d88\uff09";
@@ -245,14 +258,77 @@ namespace DesktopCopilot
 
             Controls.Add(box);
             Controls.Add(hint);
+            Controls.Add(send);
+            // The keyboard may land on the form rather than the text box, so handle the keys
+            // here too: Enter and Esc must always work once the box is open.
+            KeyDown += delegate (object s, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Accept(); }
+                else if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; Hide(); }
+            };
+            Shown += delegate
+            {
+                ActiveControl = box;
+                box.Focus();
+                box.SelectAll();
+            };
         }
 
         internal void Open()
         {
             box.Text = "";
             Show();
+            TopMost = true;
+            ForceFocus();
+            // Windows hands the foreground back to whoever asked last, so keep re-asserting
+            // focus for a moment: the user is likely already typing.
+            if (focusTicker != null) { focusTicker.Stop(); focusTicker.Dispose(); }
+            int attempts = 0;
+            focusTicker = new System.Windows.Forms.Timer();
+            focusTicker.Interval = 150;
+            focusTicker.Tick += delegate
+            {
+                attempts++;
+                if (!Visible || attempts > 12) { focusTicker.Stop(); return; }
+                if (!ContainsFocus) ForceFocus();
+            };
+            focusTicker.Start();
+        }
+
+        private void ForceFocus()
+        {
+            try
+            {
+                Input.PressKeys("alt");
+                System.Threading.Thread.Sleep(40);
+                IntPtr fg = Native.GetForegroundWindow();
+                uint pidUnused;
+                uint fgThread = Native.GetWindowThreadProcessId(fg, out pidUnused);
+                uint myThread = Native.GetCurrentThreadId();
+                bool attached = Native.AttachThreadInput(myThread, fgThread, true);
+                try
+                {
+                    Native.BringWindowToTop(Handle);
+                    Native.SetForegroundWindow(Handle);
+                }
+                finally
+                {
+                    if (attached) Native.AttachThreadInput(myThread, fgThread, false);
+                }
+            }
+            catch { }
             Activate();
-            box.Focus();
+            ActiveControl = box;
+            box.Select();
+            try { BeginInvoke(new Action(delegate { ActiveControl = box; box.Focus(); })); } catch { }
+            // A synthetic click on our own field is a real user-level input event, so Windows
+            // lets it take the keyboard: that is what makes typing work without a manual click.
+            try
+            {
+                Point p = box.PointToScreen(new Point(Math.Max(8, box.Width / 2), Math.Max(8, box.Height / 2)));
+                Input.Click(p.X, p.Y, false, 1);
+            }
+            catch { }
         }
 
         private void Accept()
@@ -663,7 +739,7 @@ namespace DesktopCopilot
                 if (op == "ping") { Dictionary<string, object> r = new Dictionary<string, object>(); r["pong"] = true; r["auto"] = auto; Reply(id, r); return; }
                 if (op == "status") { Dictionary<string, object> r = new Dictionary<string, object>(); r["auto"] = auto; r["busy"] = busy; r["highlightWindows"] = highlights.Count; if (card != null && card.Visible) { r["cardX"] = card.Left; r["cardY"] = card.Top; r["cardW"] = card.Width; r["cardH"] = card.Height; } Reply(id, r); return; }
                 if (op == "hide") { CancelPending("cancelled"); HideAll(); Dictionary<string, object> r = new Dictionary<string, object>(); Reply(id, r); return; }
-                if (op == "setauto") { auto = Convert.ToBoolean(msg["value"], CultureInfo.InvariantCulture); Dictionary<string, object> r = new Dictionary<string, object>(); r["auto"] = auto; Reply(id, r); return; }
+                if (op == "setauto") { auto = Convert.ToBoolean(msg["value"], CultureInfo.InvariantCulture); if (auto) ShowIndicator(); else HideIndicator(); Dictionary<string, object> r = new Dictionary<string, object>(); r["auto"] = auto; Reply(id, r); return; }
                 if (op == "probe") { Probe(id, msg); return; }
                 if (op == "capture") { Capture(id, msg); return; }
                 if (op == "uia") { UiaOp(id, msg); return; }
@@ -1188,6 +1264,7 @@ namespace DesktopCopilot
         {
             highlights.Hide();
             lastBoxes.Clear();
+            HideIndicatorForced();
             if (card != null)
             {
                 card.Hide();
@@ -1297,6 +1374,13 @@ namespace DesktopCopilot
         }
 
         private void HideIndicator()
+        {
+            // In auto mode the bar stays up for the whole session: it is also the reminder of
+            // which keys stop or interrupt the agent.
+            if (indicator != null && !auto) indicator.Hide();
+        }
+
+        private void HideIndicatorForced()
         {
             if (indicator != null) indicator.Hide();
         }
