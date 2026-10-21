@@ -228,7 +228,7 @@ const CHIP_SCRIPT = `<script>(function(){
     full: '整屏 + 所有窗口，跨窗口任务更准，但更慢也更费。'
   };
   var current = 'confirm';
-  var capture = 'window';
+  var capture = 'full';
   var powered = true;
   var POWERS = [['on', '开启'], ['off', '暂停']];
   var bar = panel.querySelector('#dsh-dc-modes');
@@ -364,7 +364,7 @@ export async function apply(ctx, config = {}) {
   /** Page-selected execution mode: confirm (card), auto (no card), guide (boxes only). */
   let mode = 'confirm'
   /** Page-selected capture scope: window (front window) or full (whole screen, every window). */
-  let captureScope = 'window'
+  let captureScope = 'full'
   const web = ctx.webServer
   if (web && typeof web.register === 'function') {
     const readJson = (req, done) => {
@@ -439,6 +439,24 @@ export async function apply(ctx, config = {}) {
    * duplicate labels ("关闭标签页") still resolve to the right one.
    */
   const resolveTargets = async (actions) => {
+    // Full-screen mode stays on the snapshot: a fresh dump costs a full UIA walk across
+    // every window and its rectangles can belong to a window that has since moved, so
+    // clicks go straight to the coordinates the model saw, like a human with a mouse.
+    if (captureScope === 'full') {
+      const boxes = []
+      const placed = actions.map((action, index) => {
+        const element = action.id ? elements.get(action.id) : undefined
+        if (element) {
+          boxes.push({ x: element.x, y: element.y, w: element.w, h: element.h, n: index + 1 })
+          return { ...action, x: Math.round(element.x + element.w / 2), y: Math.round(element.y + element.h / 2) }
+        }
+        if (action.x !== undefined && action.y !== undefined) {
+          boxes.push({ x: action.x - 24, y: action.y - 24, w: 48, h: 48, n: index + 1 })
+        }
+        return action
+      })
+      return { actions: placed, boxes }
+    }
     if (!actions.some(action => action.id)) return { actions, boxes: boxesFor(actions, elements) }
     let fresh = []
     try {
@@ -467,7 +485,7 @@ export async function apply(ctx, config = {}) {
 
   const captureTool = {
     name: 'desktop_capture',
-    description: 'Capture the desktop and its UI Automation element list with stable ids. scope=window (default) reads only the front window; scope=full reads the whole screen and every visible window, which is what cross-window or multi-app tasks need. Call this before each step and again after acting, and prefer element ids over pixel coordinates.',
+    description: 'Capture the desktop and its UI Automation element list with stable ids. scope=full (default) reads the whole screen and every visible window, which is what cross-window or multi-app tasks need; scope=window reads only the front window and is cheaper. Call this before each step and again after acting, and prefer element ids over pixel coordinates.',
     parameters: CAPTURE_PARAMETERS,
     output: {
       schema: CAPTURE_OUTPUT,
@@ -515,7 +533,7 @@ export async function apply(ctx, config = {}) {
 
   const stepTool = {
     name: 'desktop_step',
-    description: 'Propose at most 3 actions for the current screen, show them to the user as numbered highlight boxes plus a 3-way card (self-execute / next / reject), then carry out the choice. Actions must target element ids from the last desktop_capture; use pixel x/y only when no element fits. To visit a URL use kind "open" with "url": it opens a new tab, so never type an address into the current tab and press Enter. Returns the user choice, the execution results, and the rejection reason.',
+    description: 'Propose at most 3 actions for the current screen, show them to the user as numbered highlight boxes plus a 3-way card (self-execute / next / reject), then carry out the choice. Actions must target element ids from the last desktop_capture; use pixel x/y only when no element fits. In full-screen scope clicks reuse the coordinates from that snapshot with a real mouse click instead of re-reading UI Automation, so re-capture after anything moves. To visit a URL use kind "open" with "url": it opens a new tab, so never type an address into the current tab and press Enter. Returns the user choice, the execution results, and the rejection reason.',
     parameters: STEP_PARAMETERS,
     output: {
       schema: STEP_OUTPUT,
