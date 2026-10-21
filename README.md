@@ -6,6 +6,13 @@ Screenshot → the model proposes ≤3 actions → you confirm → it executes �
 ![version](https://img.shields.io/badge/version-1.2.0-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![license](https://img.shields.io/badge/license-MIT-green)
+![made by](https://img.shields.io/badge/packaged%20%26%20pushed-by%20an%20AI%20agent-8A2BE2)
+
+> ### 🤖 从打包到提交，全程由 AI 完成（除登录步骤外）
+> **人类只负责「grill me」和「yes」。**
+>
+> *Packaged, documented and pushed by an AI agent — end to end, except the one login step.*
+> *The human only showed up to grill it and say yes.*
 
 Unlike a screenshot-every-second agent, every step is one deliberate turn: one snapshot, at most three
 actions, one visible result. That keeps the token cost low and keeps a human in the loop by default.
