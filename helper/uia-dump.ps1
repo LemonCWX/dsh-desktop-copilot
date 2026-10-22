@@ -115,14 +115,24 @@ else {
         $rect = $null
         $pidOf = 0
         $visible = $false
+        $className = ''
         try {
             $title = [string]$top.Current.Name
             $rect = $top.Current.BoundingRectangle
             $pidOf = [int]$top.Current.ProcessId
             $visible = -not $top.Current.IsOffscreen
+            $className = [string]$top.Current.ClassName
         } catch { }
+        # The taskbar has no name, so it used to be dropped from every full-screen snapshot.
+        $isTray = $className -eq 'Shell_TrayWnd'
+        if ($isTray -and $title.Trim().Length -eq 0) { $title = '任务栏' }
         $skipWin = $title -match 'NVIDIA' -or $title -eq 'Program Manager' -or $title -eq 'WPELiveWallpaper' -or $title -eq 'FolderView'
-        if ($visible -and -not $skipWin -and $title.Trim().Length -gt 0 -and -not $rect.IsEmpty -and $rect.Width -gt 40 -and $rect.Height -gt 40 -and $pidOf -ne $self) {
+        # A minimized window keeps a placeholder rectangle far off-screen (-32000-ish); it is
+        # not part of what the user can see, so it must not enter the snapshot.
+        $onScreen = -not $rect.IsEmpty -and $rect.X -ge ($screen.X - 50) -and $rect.Y -ge ($screen.Y - 50)
+        $minW = if ($isTray) { 100 } else { 40 }
+        $minH = if ($isTray) { 20 } else { 40 }
+        if ($visible -and -not $skipWin -and $title.Trim().Length -gt 0 -and $onScreen -and $rect.Width -gt $minW -and $rect.Height -gt $minH -and $pidOf -ne $self) {
             $procName = ''
             try { $procName = (Get-Process -Id $pidOf).ProcessName } catch { }
             [void]$windows.Add([ordered]@{

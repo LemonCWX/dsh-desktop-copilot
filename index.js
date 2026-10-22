@@ -468,7 +468,11 @@ export async function apply(ctx, config = {}) {
     if (!client.socket) { if (exePath === undefined) { exePath = deployHelper().exe; client.exePath = exePath } await client.start() }
     const zoomRegion = region && Number(region.w) > 0 && Number(region.h) > 0 ? region : undefined
     const uia = await client.request('uia', full ? { scope: 'full' } : {})
-    if (!uia.elements || uia.elements.length === 0) {
+    const emptyTree = !uia.elements || uia.elements.length === 0
+    const hasOcr = Array.isArray(uia.ocr) && uia.ocr.length > 0
+    // The desktop and full-screen games have no tree at all; a screenshot plus OCR is still
+    // a usable capture there, so only refuse when there is nothing to look at either.
+    if (emptyTree && !full && !hasOcr) {
       throw new Error(`无法读取前台窗口「${uia.title}」的控件树（进程 ${uia.process}）。该窗口可能不支持 UI Automation。`)
     }
     lastWindow = { title: uia.title, process: uia.process, pid: uia.pid, x: uia.x, y: uia.y, w: uia.w, h: uia.h }

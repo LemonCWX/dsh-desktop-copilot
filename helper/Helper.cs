@@ -1016,7 +1016,24 @@ namespace DesktopCopilot
             {
                 try
                 {
-                    Dictionary<string, object> payload = DumpUia(target, scope);
+                    Dictionary<string, object> payload = null;
+                    try { payload = DumpUia(target, scope); }
+                    catch (Exception dumpError)
+                    {
+                        // The desktop / a full-screen game can have no usable automation root.
+                        // A screenshot plus OCR is still worth returning.
+                        Log("uia dump failed, falling back to screenshot only: " + dumpError.Message);
+                        Rectangle bounds = Screen.PrimaryScreen.Bounds;
+                        payload = new Dictionary<string, object>();
+                        payload["title"] = "";
+                        payload["process"] = "";
+                        payload["pid"] = 0;
+                        payload["x"] = bounds.X; payload["y"] = bounds.Y;
+                        payload["w"] = bounds.Width; payload["h"] = bounds.Height;
+                        payload["total"] = 0;
+                        payload["windows"] = new object[0];
+                        payload["elements"] = new object[0];
+                    }
                     host.BeginInvoke(new Action(delegate
                     {
                         lastWindowHandle = target;

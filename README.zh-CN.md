@@ -5,7 +5,7 @@
 **面向真实 Windows 桌面的人机协同 computer-use 层。**
 截图 → 模型出 ≤3 个动作 → 你确认 → 它执行 → 再看一眼。
 
-![version](https://img.shields.io/badge/version-1.2.2-blue)
+![version](https://img.shields.io/badge/version-1.2.3-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![made by](https://img.shields.io/badge/packaged%20%26%20pushed-by%20an%20AI%20agent-8A2BE2)
@@ -109,16 +109,20 @@ Host 与 helper 之间走本地 TCP（NDJSON）；helper 是独立的 `winexe`�
 ## 已知限制
 
 - **自绘界面**（微信、QQ、ChatGPT 桌面端）没有控件树：文字靠 OCR，点击靠估算坐标，表情、图片和发言人身份都识别不了
-- **任务栏**窗口标题为空，会被整屏快照过滤掉；需要时单独读任务栏
 - **只支持单显示器**坐标
 - 滚轮是逐格发送的，因为不少程序会把一个大的 wheel delta 合并掉
+
+## v1.2.3 修正
+
+- **任务栏进入整屏快照**：以前因为窗口标题为空被丢弃；现在任务栏按钮作为普通元素出现，可以直接按 id 点
+- **最小化窗口不再混进快照**：Windows 把它们停在 `-32000` 附近，会产生毫无意义的矩形；现在屏幕外的窗口会被过滤
+- **桌面（以及任何读不到控件树的前台）不再整张失败**：没有 UIA 根节点时退回「截图 + OCR」，而不是报错
 
 ---
 
 ## 路线图
 
 - OCR 文字框升级为一等点击目标（现在坐标是估的）
-- 任务栏进入整屏快照
 - 多显示器坐标
 - 带修饰键、带路径避让的拖拽
 

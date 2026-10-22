@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-desktop-copilot",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "private": true,
   "description": "Desktop Copilot: one confirmed step at a time over the real Windows desktop.",
   "type": "module",

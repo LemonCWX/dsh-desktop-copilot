@@ -5,7 +5,7 @@
 **A human-in-the-loop computer-use layer for the real Windows desktop.**
 Screenshot → the model proposes ≤3 actions → you confirm → it executes → it looks again.
 
-![version](https://img.shields.io/badge/version-1.2.2-blue)
+![version](https://img.shields.io/badge/version-1.2.3-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![made by](https://img.shields.io/badge/packaged%20%26%20pushed-by%20an%20AI%20agent-8A2BE2)
@@ -115,17 +115,23 @@ The host talks to the helper over a local TCP socket (NDJSON), the helper runs a
 
 - **Self-drawn UIs** (WeChat, QQ, ChatGPT desktop) have no control tree: text comes from OCR, clicks go
   to estimated coordinates. Emoji, images and message senders are not identified.
-- **Taskbar** windows have empty titles and are filtered out of the full-screen snapshot; read the
-  taskbar explicitly when you need it.
 - **Single monitor** coordinates only.
 - Scrolling is sent notch by notch, because several apps coalesce one large wheel delta.
+
+## v1.2.3 fixes
+
+- **Taskbar is in the full-screen snapshot now** — it used to be dropped because its window has no title;
+  taskbar buttons arrive as regular elements, so icons can be clicked by id.
+- **Minimized windows no longer pollute the snapshot** — Windows parks them at `-32000`-ish coordinates,
+  which produced meaningless rectangles; off-screen windows are filtered out.
+- **Desktop (and any UIA-less foreground) no longer fails the whole capture** — when there is no
+  automation root, the helper returns the screenshot plus OCR instead of an error.
 
 ---
 
 ## Roadmap
 
 - OCR boxes as first-class click targets (currently coordinates are estimated)
-- Taskbar in the full-screen snapshot
 - Multi-monitor coordinates
 - Drag with modifier keys and path avoidance
 
